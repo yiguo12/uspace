@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <title>USPACE 行動導航 (完整功能版)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* 確保全高，讓地圖能填滿視口 */
+        html, body {
+            height: 100%;
+            overflow: hidden; /* 防止滾動地圖和清單時產生雙重滾動條 */
+        }
+        /* 模擬手機畫面的最大寬度 */
+        #app-wrapper {
+            max-width: 480px; 
+            height: 100vh;
+            margin: 0 auto;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            background-color: #fff; 
+        }
+        .dark #app-wrapper {
+             background-color: #1A1A1A;
+        }
+        /* 讓橫向滾動條在支援的瀏覽器上隱藏 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+
+    <script>
+        // Tailwind Config with custom fonts and theme support
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'Inter', 'sans-serif'],
+                        display: ['Inter', 'sans-serif'], 
+                    },
+                    colors: {
+                        'uspace-primary': '#007AFF', // 科技藍
+                        'uspace-dark': '#1A1A1A',
+                        'uspace-light': '#F4F7FB',
+                        'success': '#10B981', 
+                        'danger': '#EF4444', 
+                        'uspace-yellow': '#FDE047', // 計費說明橫幅
+                        'uspace-tag': '#FCD34D',   // P1027 標籤
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-100 dark:bg-uspace-dark font-sans">
+    
+    <div id="app-wrapper" class="bg-white dark:bg-uspace-dark text-uspace-dark dark:text-white transition-colors duration-300">
+
+        <header class="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[inherit] z-20 p-4 bg-white dark:bg-uspace-dark shadow-md transition-colors duration-300">
+            <div class="flex justify-between items-center">
+                <button aria-label="返回" class="text-xl p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="flex-grow mx-3 relative">
+                    <input type="text" placeholder="輸入目的地或地址..." class="w-full py-2 pl-10 pr-4 border border-gray-300 dark:border-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-uspace-primary bg-uspace-light dark:bg-gray-800 transition-colors duration-300 placeholder:text-gray-500 dark:placeholder:text-gray-400 text-sm" aria-label="目的地搜尋">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                </div>
+            </div>
+        </header>
+
+        <main id="map-container" class="absolute inset-0 z-0 pt-[72px] pb-16">
+            <img src="https://picsum.photos/480/800/?random=map" alt="地圖模擬圖" class="w-full h-full object-cover grayscale dark:filter dark:brightness-50" aria-hidden="true">
+        </main>
+        
+        <div class="absolute bottom-20 right-6 z-10">
+            <button aria-label="定位我的位置" class="w-12 h-12 bg-white dark:bg-gray-800 rounded-full shadow-xl text-xl text-uspace-primary hover:scale-105 transition-transform">
+                <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
+        </div>
+        
+        <section id="parking-list-drawer" class="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-[inherit] z-30 max-h-[80vh] transition-transform duration-500 ease-in-out transform translate-y-0">
+            
+            <div class="bg-white dark:bg-gray-800 rounded-t-2xl shadow-2xl overflow-hidden flex flex-col h-full">
+                
+                <div id="drawer-header" class="p-3 pt-4 flex flex-col justify-center items-center cursor-grab active:cursor-grabbing flex-shrink-0">
+                    <div class="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mb-2"></div>
+                    <h2 class="text-lg font-bold">附近停車場</h2>
+                </div>
+                
+                <div class="px-4 py-2 border-b border-gray-100 dark:border-gray-700 flex items-center space-x-3 overflow-x-auto whitespace-nowrap flex-shrink-0 no-scrollbar">
+                    <button aria-label="開啟篩選器" class="flex items-center text-uspace-primary font-medium bg-uspace-light dark:bg-gray-700 px-3 py-1 rounded-full text-sm hover:opacity-80 transition-opacity flex-shrink-0">
+                        <i class="fa-solid fa-sliders mr-2"></i>
+                        篩選
+                    </button>
+                    <span class="chip-active text-white bg-uspace-primary px-3 py-1 rounded-full text-sm flex-shrink-0 cursor-pointer">
+                        <i class="fa-solid fa-road mr-1"></i> 最近距離
+                    </span>
+                    <span class="chip text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0">
+                        <i class="fa-solid fa-dollar-sign mr-1"></i> 最低價格
+                    </span>
+                    <span class="chip text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0">
+                        <i class="fa-solid fa-clock-rotate-left mr-1"></i> 24H 服務
+                    </span>
+                    <span class="chip text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0">
+                        <i class="fa-solid fa-bookmark mr-1"></i> 可預約
+                    </span>
+                </div>
+
+                
+                <div id="parking-list-content" class="overflow-y-auto p-4 flex-grow space-y-4">
+
+                    <article class="parking-card p-4 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 transition-shadow hover:shadow-lg cursor-pointer">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="bg-uspace-tag text-black font-extrabold text-sm px-2 py-0.5 rounded">P102</span>
+                                    <h3 class="font-bold text-lg" title="信義區松菸文創停車場">信義區松菸文創停車場</h3>
+                                </div>
+                                <div class="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+                                    <p><span class="font-display font-semibold">0.3</span> km | 駕車 2 分鐘</p>
+                                    <p class="text-success font-semibold"><i class="fa-solid fa-car mr-1"></i>剩餘 12</p>
+                                </div>
+                            </div>
+
+                            <div class="flex-shrink-0 ml-4 flex flex-col items-end">
+                                <div class="mb-2 text-right">
+                                    <span class="font-display font-extrabold text-xl text-uspace-dark dark:text-white">40</span>
+                                    <span class="text-sm text-gray-600 dark:text-gray-400"> 元/小時</span>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="bg-white border border-uspace-primary text-uspace-primary rounded-full px-4 py-1 text-sm font-semibold hover:bg-uspace-primary hover:text-white transition-colors">
+                                        <i class="fa-solid fa-bookmark mr-1"></i> 預約
+                                    </button>
+                                    <button class="bg-uspace-primary text-white rounded-full px-4 py-1 text-sm font-semibold hover:opacity-90 transition-opacity">
+                                        <i class="fa-solid fa-route mr-1"></i> 導航
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="parking-card p-4 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 transition-shadow hover:shadow-lg cursor-pointer">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="bg-uspace-tag text-black font-extrabold text-sm px-2 py-0.5 rounded">P308</span>
+                                    <h3 class="font-bold text-lg" title="光復南路私人車位">光復南路私人車位</h3>
+                                </div>
+                                <div class="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+                                    <p><span class="font-display font-semibold">0.8</span> km | 駕車 3 分鐘</p>
+                                    <p class="text-success font-semibold"><i class="fa-solid fa-car mr-1"></i>剩餘 3</p>
+                                </div>
+                            </div>
+                            <div class="flex-shrink-0 ml-4 flex flex-col items-end">
+                                <div class="mb-2 text-right">
+                                    <span class="font-display font-extrabold text-xl text-uspace-dark dark:text-white">50</span>
+                                    <span class="text-sm text-gray-600 dark:text-gray-400"> 元/小時</span>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button class="bg-white border border-uspace-primary text-uspace-primary rounded-full px-4 py-1 text-sm font-semibold hover:bg-uspace-primary hover:text-white transition-colors">
+                                        <i class="fa-solid fa-bookmark mr-1"></i> 預約
+                                    </button>
+                                    <button class="bg-uspace-primary text-white rounded-full px-4 py-1 text-sm font-semibold hover:opacity-90 transition-opacity">
+                                        <i class="fa-solid fa-route mr-1"></i> 導航
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <article class="parking-card p-4 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                        <div class="flex justify-between items-center opacity-50">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="bg-gray-300 text-gray-700 font-extrabold text-sm px-2 py-0.5 rounded">P199</span>
+                                    <h3 class="font-bold text-lg" title="市政府轉運站">市政府轉運站</h3>
+                                </div>
+                                <div class="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400">
+                                    <p><span class="font-display font-semibold">1.5</span> km</p>
+                                </div>
+                            </div>
+                            <div class="text-right flex-shrink-0 ml-4">
+                                <div class="flex flex-col items-center text-gray-500 dark:text-gray-400">
+                                    <i class="fa-solid fa-car-on text-2xl mb-1 text-danger"></i>
+                                    <span class="text-sm font-semibold">已滿</span>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <div class="h-40 text-center text-gray-400 pt-8">[載入更多停車場...]</div>
+                </div>
+            </div>
+        </section>
+
+        <footer id="app-nav" class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[inherit] h-16 bg-white dark:bg-gray-800 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] dark:shadow-[0_-2px_10px_rgba(0,0,0,0.2)] z-40 transition-colors duration-300">
+            <nav class="flex justify-around items-center h-full text-center">
+                <a href="#" class="flex flex-col items-center text-gray-400 dark:text-gray-500 hover:text-uspace-primary dark:hover:text-uspace-primary transition-colors">
+                    <i class="fa-solid fa-house text-xl"></i>
+                    <span class="text-xs font-medium">首頁</span>
+                </a>
+                <a href="#" class="flex flex-col items-center text-uspace-primary dark:text-uspace-primary transition-colors">
+                    <i class="fa-solid fa-map-location-dot text-xl"></i>
+                    <span class="text-xs font-medium">地圖</span>
+                </a>
+                <a href="#" class="flex flex-col items-center text-gray-400 dark:text-gray-500 hover:text-uspace-primary dark:hover:text-uspace-primary transition-colors">
+                    <i class="fa-solid fa-tags text-xl"></i>
+                    <span class="text-xs font-medium">優惠專區</span>
+                </a>
+                <a href="#" class="flex flex-col items-center text-gray-400 dark:text-gray-500 hover:text-uspace-primary dark:hover:text-uspace-primary transition-colors">
+                    <i class="fa-solid fa-user text-xl"></i>
+                    <span class="text-xs font-medium">個人</span>
+                </a>
+            </nav>
+        </footer>
+
+    </div>
+
+    <script>
+        // ... (檢查 localStorage 和點擊事件)
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            html.classList.add('dark');
+        } else {
+            html.classList.remove('dark');
+        }
+        themeToggle.addEventListener('click', () => {
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
+        // =============================================
+        // 🚀 底部抽屜手勢互動邏輯 (UX 升級版)
+        // (此邏輯不需修改，保持流暢的手勢體驗)
+        // =============================================
+        const drawer = document.getElementById('parking-list-drawer');
+        const drawerHeader = document.getElementById('drawer-header');
+        
+        let isExpanded = false; 
+        let isDragging = false;
+        let startY = 0;
+        let startTranslateY = 0; 
+        
+        const collapsedState = 'translateY(0)'; 
+        const expandedState = 'translateY(-60vh)'; 
+
+        function getCurrentTranslateY(element) {
+            const style = window.getComputedStyle(element);
+            const matrix = new DOMMatrix(style.transform);
+            return matrix.m42; 
+        }
+        
+        function setTranslateY(element, y) {
+            element.style.transform = `translateY(${y}px)`;
+        }
+
+        function expandDrawer() {
+            drawer.style.transition = 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)';
+            drawer.style.transform = expandedState;
+            isExpanded = true;
+        }
+
+        function collapseDrawer() {
+            drawer.style.transition = 'transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1)';
+            drawer.style.transform = collapsedState;
+            isExpanded = false;
+        }
+        
+        function toggleDrawer() {
+            if (isExpanded) {
+                collapseDrawer();
+            } else {
+                expandDrawer();
+            }
+        }
+        
+        function touchStart(e) {
+            if (!drawerHeader.contains(e.target)) return; 
+            isDragging = true;
+            startY = e.touches[0].clientY;
+            startTranslateY = getCurrentTranslateY(drawer);
+            drawer.style.transition = 'none'; 
+        }
+
+        function touchMove(e) {
+            if (!isDragging) return;
+            
+            e.preventDefault(); 
+
+            const currentY = e.touches[0].clientY;
+            const deltaY = currentY - startY;
+            let newTranslateY = startTranslateY + deltaY;
+            
+            const expandedYInPixels = -window.innerHeight * 0.60;
+            const collapsedYInPixels = 0;
+            
+            if (newTranslateY < expandedYInPixels) {
+                newTranslateY = expandedYInPixels - Math.pow(Math.abs(newTranslateY - expandedYInPixels), 0.7);
+            }
+            if (newTranslateY > collapsedYInPixels) {
+                newTranslateY = collapsedYInPixels + Math.pow(newTranslateY - collapsedYInPixels, 0.7);
+            }
+
+            setTranslateY(drawer, newTranslateY);
+        }
+
+        function touchEnd(e) {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            
+            const deltaY = e.changedTouches[0].clientY - startY;
+            
+            if (Math.abs(deltaY) < 10 && drawerHeader.contains(e.target)) {
+                toggleDrawer();
+                return;
+            }
+
+            const threshold = 100; 
+            
+            if (isExpanded) {
+                if (deltaY > threshold) {
+                    collapseDrawer(); 
+                } else {
+                    expandDrawer(); 
+                }
+            } else {
+                if (deltaY < -threshold) {
+                    expandDrawer(); 
+                } else {
+                    collapseDrawer(); 
+                }
+            }
+        }
+        
+        // 綁定事件
+        drawer.addEventListener('touchstart', touchStart, { passive: true });
+        document.addEventListener('touchmove', touchMove, { passive: false });
+        document.addEventListener('touchend', touchEnd);
+
+    </script>
+</body>
+</html>
